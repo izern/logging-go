@@ -3,6 +3,7 @@ package logging
 import (
 	"fmt"
 	"github.com/spf13/viper"
+	"go.uber.org/atomic"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"os"
@@ -22,11 +23,17 @@ var loggerInstanceCache sync.Map
 // RootModule default module
 var RootModule = "root"
 
+var initialized = atomic.NewBool(false)
+
 // default global logger instance
 var logger *zap.Logger
 
 // InitZapLoggerFromViper InitZapLoggerFromViper, should be call once
 func InitZapLoggerFromViper(viper *viper.Viper, options ...zap.Option) {
+
+	if !initialized.CAS(false, true) {
+		return
+	}
 	// set custom default value
 	initDefaultValue(viper)
 	log := initLog(viper, options...)
@@ -64,6 +71,7 @@ func InitZapLoggerFromViper(viper *viper.Viper, options ...zap.Option) {
 
 // GetLevel get module log level
 func GetLevel(module string) zapcore.Level {
+	checkInitialized()
 	// Closest module
 	var matchModule = RootModule
 	// Have the most identical prefixes
@@ -89,6 +97,7 @@ func GetLevel(module string) zapcore.Level {
 
 // GetLogger get module logger
 func GetLogger(module string) *zap.Logger {
+	checkInitialized()
 	cache, ok := loggerInstanceCache.Load(module)
 	if ok {
 		return cache.(*zap.Logger)
@@ -99,6 +108,12 @@ func GetLogger(module string) *zap.Logger {
 		loggerInstanceCache.Store(module, log)
 
 		return log
+	}
+}
+
+func checkInitialized() {
+	if !initialized.Load() {
+		InitZapLoggerFromViper(viper.GetViper())
 	}
 }
 

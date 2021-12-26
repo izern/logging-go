@@ -15,6 +15,9 @@ func init() {
 // test init by default
 func TestInitZapLoggerFromViper1(t *testing.T) {
 	InitZapLoggerFromViper(viper.GetViper())
+	InitZapLoggerFromViper(viper.GetViper())
+	InitZapLoggerFromViper(viper.GetViper())
+	InitZapLoggerFromViper(viper.GetViper())
 	assert.NotNil(t, logger)
 	logger.Sugar().Info("TestInitZapLoggerFromViper")
 	logger.Sugar().Info("TestInitZapLoggerFromViper")
