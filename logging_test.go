@@ -30,6 +30,11 @@ func TestInitZapLoggerFromViper2(t *testing.T) {
 	assert.Truef(t, b, "no GOPATH ENV")
 	viper.SetConfigFile(gopath + "/src/github.com/izern/logging-go/config.yaml")
 	err := viper.ReadInConfig()
+
+	get := viper.GetViper().Get("logging.output.console")
+	assert.Nil(t, get)
+	set := viper.GetViper().IsSet("logging.output.console")
+	assert.False(t, set, "")
 	assert.NoError(t, err)
 	InitZapLoggerFromViper(viper.GetViper())
 	assert.NotNil(t, logger)
@@ -83,5 +88,4 @@ func TestGetLogger(t *testing.T) {
 
 	log3 := GetLogger("module3")
 	assert.False(t, log == log3)
-
 }

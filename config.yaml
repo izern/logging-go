@@ -19,8 +19,6 @@ logging:
     MessageKey: msg
     StacktraceKey: stacktrace
   output: # default is console
-    console: # console or file. console is output on TTY
-      async: false # async output,default false
     file:
       path: /tmp/golang/log.log
       async: false # async output,default false

@@ -16,6 +16,8 @@ var moduleLevelMap sync.Map
 // log level : *logger
 var loggerLevelInstanceMap sync.Map
 
+var moduleLoggerInstanceMap sync.Map
+
 // RootModule default module
 var RootModule = "root"
 
@@ -66,10 +68,10 @@ func InitZapLoggerFromViper(viper *viper.Viper, options ...zap.Option) {
 		default:
 			moduleLevelMap.Store(RootModule, zapcore.InfoLevel)
 			loggerLevelInstanceMap.Store(zapcore.InfoLevel, log.WithOptions(zap.IncreaseLevel(zapcore.InfoLevel)))
-
 		}
 		logger = GetLogger(RootModule)
 		zap.ReplaceGlobals(logger)
+		refresh()
 	})
 }
 
@@ -100,18 +102,39 @@ func GetLevel(module string) zapcore.Level {
 
 // GetLogger get module logger
 func GetLogger(module string) *zap.Logger {
-	level := GetLevel(module)
-	value, _ := loggerLevelInstanceMap.Load(level)
-	log := value.(*zap.Logger)
-	return log
+
+	cache, ok := moduleLoggerInstanceMap.Load(module)
+	if ok {
+		return cache.(*zap.Logger)
+	} else {
+		level := GetLevel(module)
+		value, _ := loggerLevelInstanceMap.Load(level)
+		log := &*value.(*zap.Logger)
+		moduleLoggerInstanceMap.Store(module, log)
+		return log
+	}
+}
+
+func refresh() {
+	moduleLoggerInstanceMap.Range(func(key, value interface{}) bool {
+		module := key.(string)
+		oldLog := value.(*zap.Logger)
+		newLevel := GetLevel(module)
+		newLog, _ := loggerLevelInstanceMap.Load(newLevel)
+		*oldLog = *newLog.(*zap.Logger)
+		return true
+	})
+
 }
 
 func initDefaultValue(viper *viper.Viper) {
-	viper.SetDefault("logging.level", "INFO")
-	viper.SetDefault("logging.encoding", "json")
-	output := make(map[string]interface{})
-	output["console"] = map[string]interface{}{"async": true}
-	viper.SetDefault("logging.output", output)
+	viper.Set("logging.level", "INFO")
+	viper.Set("logging.encoding", "json")
+	if !viper.IsSet("logging.output") {
+		output := make(map[string]interface{})
+		output["console"] = map[string]interface{}{"async": true}
+		viper.Set("logging.output", output)
+	}
 }
 
 // setModuleLevel
@@ -156,7 +179,8 @@ func initLog(viper *viper.Viper, options ...zap.Option) *zap.Logger {
 	}
 
 	var writers = make([]zapcore.WriteSyncer, 0)
-	if viper.IsSet("logging.output.console") {
+	hasConsole := viper.IsSet("logging.output.console")
+	if hasConsole {
 		async := viper.GetBool("logging.output.console.async")
 		if async {
 			writers = append(writers, zapcore.Lock(os.Stdout))
