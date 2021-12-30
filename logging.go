@@ -3,7 +3,6 @@ package logging
 import (
 	"fmt"
 	"github.com/spf13/viper"
-	"go.uber.org/atomic"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"os"
@@ -15,63 +14,67 @@ import (
 var moduleLevelMap sync.Map
 
 // log level : *logger
-var loggerLevelMap sync.Map
-
-// logger instance cache
-var loggerInstanceCache sync.Map
+var loggerLevelInstanceMap sync.Map
 
 // RootModule default module
 var RootModule = "root"
 
-var initialized = atomic.NewBool(false)
-
 // default global logger instance
 var logger *zap.Logger
+
+var defaultLevel = zap.InfoLevel
+
+var initOnce = sync.Once{}
+
+func init() {
+	zap.NewProductionConfig()
+	logger, _ = zap.NewProduction()
+	loggerLevelInstanceMap.Store(defaultLevel, logger)
+	moduleLevelMap.Store(RootModule, defaultLevel)
+}
 
 // InitZapLoggerFromViper InitZapLoggerFromViper, should be call once
 func InitZapLoggerFromViper(viper *viper.Viper, options ...zap.Option) {
 
-	if !initialized.CAS(false, true) {
-		return
-	}
-	// set custom default value
-	initDefaultValue(viper)
-	log := initLog(viper, options...)
-	levelValue := viper.Get("logging.level")
+	initOnce.Do(func() {
+		// set custom default value
+		initDefaultValue(viper)
+		log := initLog(viper, options...)
+		levelValue := viper.Get("logging.level")
 
-	switch levelValue.(type) {
-	case string:
-		var defaultLevel zapcore.Level
-		err := defaultLevel.Set(levelValue.(string))
-		if err != nil {
-			panic(err)
-		}
-		moduleLevelMap.Store(RootModule, defaultLevel)
-		loggerLevelMap.Store(defaultLevel, log.WithOptions(zap.IncreaseLevel(defaultLevel)))
-	case map[string]string, map[string]interface{}:
-		m := viper.GetStringMapString("logging.level")
-		for k, v := range m {
-			err := setModuleLevel(k, v, log)
+		switch levelValue.(type) {
+		case string:
+			var defaultLevel zapcore.Level
+			err := defaultLevel.Set(levelValue.(string))
 			if err != nil {
-				panic(fmt.Sprintf("cannot set module {%v}log level: %v", k, err.Error()))
+				panic(err)
 			}
-		}
-		if _, ok := moduleLevelMap.Load(RootModule); !ok {
+			moduleLevelMap.Store(RootModule, defaultLevel)
+			loggerLevelInstanceMap.Store(defaultLevel, log.WithOptions(zap.IncreaseLevel(defaultLevel)))
+		case map[string]string, map[string]interface{}:
+			m := viper.GetStringMapString("logging.level")
+			for k, v := range m {
+				err := setModuleLevel(k, v, log)
+				if err != nil {
+					panic(fmt.Sprintf("cannot set module {%v}log level: %v", k, err.Error()))
+				}
+			}
+			if _, ok := moduleLevelMap.Load(RootModule); !ok {
+				moduleLevelMap.Store(RootModule, zapcore.InfoLevel)
+				loggerLevelInstanceMap.Store(zapcore.InfoLevel, log.WithOptions(zap.IncreaseLevel(zapcore.InfoLevel)))
+			}
+		default:
 			moduleLevelMap.Store(RootModule, zapcore.InfoLevel)
-			loggerLevelMap.Store(zapcore.InfoLevel, log.WithOptions(zap.IncreaseLevel(zapcore.InfoLevel)))
-		}
-	default:
-		moduleLevelMap.Store(RootModule, zapcore.InfoLevel)
-		loggerLevelMap.Store(zapcore.InfoLevel, log.WithOptions(zap.IncreaseLevel(zapcore.InfoLevel)))
+			loggerLevelInstanceMap.Store(zapcore.InfoLevel, log.WithOptions(zap.IncreaseLevel(zapcore.InfoLevel)))
 
-	}
-	logger = GetLogger(RootModule)
-	zap.ReplaceGlobals(logger)
+		}
+		logger = GetLogger(RootModule)
+		zap.ReplaceGlobals(logger)
+	})
 }
 
 // GetLevel get module log level
 func GetLevel(module string) zapcore.Level {
-	checkInitialized()
 	// Closest module
 	var matchModule = RootModule
 	// Have the most identical prefixes
@@ -97,24 +100,10 @@ func GetLevel(module string) zapcore.Level {
 
 // GetLogger get module logger
 func GetLogger(module string) *zap.Logger {
-	checkInitialized()
-	cache, ok := loggerInstanceCache.Load(module)
-	if ok {
-		return cache.(*zap.Logger)
-	} else {
-		level := GetLevel(module)
-		value, _ := loggerLevelMap.Load(level)
-		log := &*value.(*zap.Logger)
-		loggerInstanceCache.Store(module, log)
-
-		return log
-	}
-}
-
-func checkInitialized() {
-	if !initialized.Load() {
-		InitZapLoggerFromViper(viper.GetViper())
-	}
+	level := GetLevel(module)
+	value, _ := loggerLevelInstanceMap.Load(level)
+	log := value.(*zap.Logger)
+	return log
 }
 
 func initDefaultValue(viper *viper.Viper) {
@@ -131,7 +120,7 @@ func setModuleLevel(module string, logLevel string, log *zap.Logger) error {
 	err := level.Set(logLevel)
 	if err == nil {
 		moduleLevelMap.Store(module, level)
-		loggerLevelMap.Store(level, log.WithOptions(zap.IncreaseLevel(level)))
+		loggerLevelInstanceMap.Store(level, log.WithOptions(zap.IncreaseLevel(level)))
 	}
 
 	return err
@@ -192,7 +181,7 @@ func initLog(viper *viper.Viper, options ...zap.Option) *zap.Logger {
 	core := zapcore.NewCore(
 		enc,
 		zapcore.NewMultiWriteSyncer(writers...), // 打印到控制台和文件
-		zap.DebugLevel,                          // 日志级别
+		zapcore.DebugLevel,                      // 日志级别
 	)
 	log := zap.New(core, zap.AddCaller()).WithOptions(options...)
 	return log

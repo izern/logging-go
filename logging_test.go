@@ -14,6 +14,7 @@ func init() {
 
 // test init by default
 func TestInitZapLoggerFromViper1(t *testing.T) {
+	TestInitZapLoggerFromViper2(t)
 	InitZapLoggerFromViper(viper.GetViper())
 	InitZapLoggerFromViper(viper.GetViper())
 	InitZapLoggerFromViper(viper.GetViper())
