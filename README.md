@@ -4,9 +4,16 @@
 + init from viper
 + log level of each module is set independently
 
-## Installation
+## usage
 
-`go get -u github.com/izern/logging`
+```go
+require (
+	github.com/izern/logging latest
+)
+
+replace github.com/izern/logging latest => github.com/izern/logging-go latest
+
+```
 
 ## Quick Start
 
